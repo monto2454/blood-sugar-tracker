@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Blood Sugar Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-white text-gray-900 min-h-screen flex flex-col items-center p-4">
+
+  <div class="max-w-xl w-full">
+    <h1 class="text-2xl font-bold mb-4 text-center">Blood Sugar Tracker</h1>
+
+    <form id="entryForm" class="space-y-4 bg-gray-100 p-4 rounded shadow">
+      <div>
+        <label for="date" class="block font-medium">Date</label>
+        <input type="date" id="date" name="date" class="w-full p-2 rounded" required />
+      </div>
+
+      <div>
+        <label for="time" class="block font-medium">Time of Day</label>
+        <select name="time" id="time" class="w-full p-2 rounded" required>
+          <option value="Morning">Morning</option>
+          <option value="Afternoon">Afternoon</option>
+          <option value="Evening">Evening</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="sugar" class="block font-medium">Blood Sugar (mg/dL)</label>
+        <input type="number" id="sugar" name="sugar" class="w-full p-2 rounded" required />
+      </div>
+
+      <div id="insulinSection" class="hidden">
+        <label class="block font-medium">Insulin Required?</label>
+        <label><input type="radio" name="insulin" value="Yes" /> Yes</label>
+        <label><input type="radio" name="insulin" value="No" /> No</label>
+      </div>
+
+      <div id="commentSection" class="hidden">
+        <label for="comments" class="block font-medium">Comments</label>
+        <input type="text" id="comments" name="comments" class="w-full p-2 rounded" />
+      </div>
+
+      <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">Save Entry</button>
+    </form>
+
+    <div class="my-6">
+      <h2 class="text-xl font-semibold mb-2">Weekly Average</h2>
+      <p id="weeklyAverage" class="text-lg font-medium">Calculating...</p>
+    </div>
+
+    <canvas id="sugarChart" class="w-full max-w-xl mb-6"></canvas>
+
+    <h2 class="text-xl font-semibold mb-2">Recorded Entries</h2>
+    <table class="w-full border-collapse text-left mb-6">
+      <thead>
+        <tr>
+          <th class="border p-2">Date</th>
+          <th class="border p-2">Time</th>
+          <th class="border p-2">Sugar</th>
+          <th class="border p-2">Insulin</th>
+          <th class="border p-2">Comments</th>
+        </tr>
+      </thead>
+      <tbody id="entryTable"></tbody>
+    </table>
+
+    <button id="clearLocalData" class="bg-red-600 text-white p-2 rounded hover:bg-red-700">Clear App Data</button>
+  </div>
+
+  <script>
+    const dateInput = document.getElementById("date");
+    const sugarInput = document.getElementById("sugar");
+    const insulinSection = document.getElementById("insulinSection");
+    const commentSection = document.getElementById("commentSection");
+    const entryForm = document.getElementById("entryForm");
+    const entryTable = document.getElementById("entryTable");
+    const weeklyAverageDisplay = document.getElementById("weeklyAverage");
+    const clearLocalData = document.getElementById("clearLocalData");
+
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwxDojzCBOVgkJHUYFZVzqghq29Vgrz-GscG3MBIvVXdqn25TJIdLi9mZxmMwkfoJhB/exec";
+
+    let chartInstance = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      setTodayDate();
+      loadEntries();
+      renderChart();
+      updateWeeklyAverage();
+    });
+
+    function setTodayDate() {
+      const today = new Date().toISOString().split("T")[0];
+      dateInput.value = today;
+    }
+
+    sugarInput.addEventListener("input", () => {
+      const sugarValue = parseInt(sugarInput.value, 10);
+      if (sugarValue > 150) {
+        insulinSection.classList.remove("hidden");
+      } else {
+        insulinSection.classList.add("hidden");
+        commentSection.classList.add("hidden");
+      }
+    });
+
+    entryForm.insulin?.forEach?.((radio) => {
+      radio.addEventListener("change", () => {
+        if (radio.value === "No") {
+          commentSection.classList.remove("hidden");
+        } else {
+          commentSection.classList.add("hidden");
+        }
+      });
+    });
+
+    function loadEntries() {
+      const entries = JSON.parse(localStorage.getItem("entries") || "[]");
+      entryTable.innerHTML = "";
+      entries.forEach(addEntryToTable);
+    }
+
+    function addEntryToTable(entry) {
+      const tr = document.createElement("tr");
+      ["date", "time", "sugar", "insulin", "comments"].forEach((key) => {
+        const td = document.createElement("td");
+        td.textContent = entry[key] || "";
+        td.className = "p-2 border";
+        tr.appendChild(td);
+      });
+      entryTable.appendChild(tr);
+    }
+
+    function updateWeeklyAverage() {
+      const entries = JSON.parse(localStorage.getItem("entries") || "[]");
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      const weekly = entries.filter(e => new Date(e.date) >= oneWeekAgo);
+      const avg = weekly.reduce((sum, e) => sum + parseFloat(e.sugar), 0) / (weekly.length || 1);
+      weeklyAverageDisplay.textContent = weekly.length ? `${avg.toFixed(1)} mg/dL` : "No data this week";
+    }
+
+    function renderChart() {
+      const entries = JSON.parse(localStorage.getItem("entries") || "[]");
+      const ctx = document.getElementById("sugarChart").getContext("2d");
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: entries.map(e => `${e.date} (${e.time})`),
+          datasets: [{
+            label: "Blood Sugar",
+            data: entries.map(e => e.sugar),
+            borderColor: "#3B82F6",
+            backgroundColor: "rgba(59,130,246,0.2)",
+            fill: true
+          }]
+        },
+        options: {
+          scales: { y: { beginAtZero: false } }
+        }
+      });
+    }
+
+    entryForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const entry = {
+        date: dateInput.value,
+        time: entryForm.time.value,
+        sugar: sugarInput.value,
+        insulin: entryForm.insulin?.value || "",
+        comments: entryForm.comments?.value || ""
+      };
+
+      const entries = JSON.parse(localStorage.getItem("entries") || "[]");
+      if (entries.some(e => e.date === entry.date && e.time === entry.time)) {
+        alert("Duplicate entry for this date and time");
+        return;
+      }
+
+      entries.push(entry);
+      localStorage.setItem("entries", JSON.stringify(entries));
+      addEntryToTable(entry);
+      updateWeeklyAverage();
+      renderChart();
+
+      const params = new URLSearchParams(entry);
+      fetch(WEB_APP_URL, {
+        method: "POST",
+        body: params
+      })
+      .then(res => res.text())
+      .then(console.log)
+      .catch(console.error);
+
+      entryForm.reset();
+      setTodayDate();
+      insulinSection.classList.add("hidden");
+      commentSection.classList.add("hidden");
+    });
+
+    clearLocalData.addEventListener("click", () => {
+      if (confirm("Are you sure you want to clear all app data?")) {
+        localStorage.removeItem("entries");
+        entryTable.innerHTML = "";
+        updateWeeklyAverage();
+        renderChart();
+      }
+    });
+  </script>
+
+</body>
+</html>
